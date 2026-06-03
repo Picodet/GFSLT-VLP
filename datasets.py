@@ -74,7 +74,6 @@ class S2T_Dataset(Dataset.Dataset):
         self.target_field = config.get('data', {}).get('target_field', 'gloss')
         if self.target_field not in {'gloss', 'text'}:
             raise ValueError(f"Unsupported target_field={self.target_field!r}; expected 'gloss' or 'text'.")
-        self.target_lowercase = config.get('data', {}).get('target_lowercase', False)
         
         self.list = [key for key,value in self.raw_data.items()]   
 
@@ -105,7 +104,7 @@ class S2T_Dataset(Dataset.Dataset):
     def __getitem__(self, index):
         key = self.list[index]
         sample = self.raw_data[key]
-        tgt_sample = self.format_target(sample[self.target_field])
+        tgt_sample = sample[self.target_field]
         length = sample['length']
         
         name_sample = sample['name']
@@ -214,7 +213,7 @@ class S2T_Dataset(Dataset.Dataset):
         return src_input, tgt_input
 
     def __str__(self):
-        return f'#total {self.phase} set: {len(self.list)}, target_field: {self.target_field}, target_lowercase: {self.target_lowercase}.'
+        return f'#total {self.phase} set: {len(self.list)}, target_field: {self.target_field}.'
 
 
 
