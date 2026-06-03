@@ -9,13 +9,22 @@ from hftrim.TokenizerTrimmer import TokenizerTrimmer
 
 raw_data = utils.load_dataset_file('data/Phonexi-2014T/labels.train')
 
+TARGET_FIELD = 'gloss'
+TARGET_LOWERCASE = False
+
+
+def format_target(target):
+    target = ' '.join(str(target).strip().split())
+    if TARGET_LOWERCASE:
+        target = target.lower()
+    return target
+
+
 data = []
 
 for key,value in raw_data.items():
-    sentence = value['text']
-    # gloss = value['gloss']
+    sentence = format_target(value[TARGET_FIELD])
     data.append(sentence)
-    # data.append(gloss.lower())
 
 tokenizer = MBartTokenizer.from_pretrained("facebook/mbart-large-cc25", src_lang="de_DE", tgt_lang="de_DE")
 
