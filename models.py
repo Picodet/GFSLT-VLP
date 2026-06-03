@@ -10,6 +10,8 @@ import math
 
 import torchvision
 from torch.nn.utils.rnn import pad_sequence
+from signgraph_adapter import SignGraphResNetForGFSLT
+from fusion_logger import log_event, summarize_obj, tensor_summary
 #import pytorchvideo.models.x3d as x3d
 import utils as utils
 
@@ -234,19 +236,43 @@ class SLRCLIP(nn.Module):
 class FeatureExtracter(nn.Module):
     def __init__(self, frozen=False):
         super(FeatureExtracter, self).__init__()
-        self.conv_2d = resnet() # InceptionI3d()
+        self.conv_2d = SignGraphResNetForGFSLT(
+            backbone_name="resnet18",
+            adaptive_pool=True,
+            log_shapes=True,
+            log_every=50,
+            hook_backbone=True,
+        )
         self.conv_1d = TemporalConv(input_size=512, hidden_size=1024, conv_type=2)
+        self.log_shapes = True
+        self.log_every = 50
+        self.forward_step = 0
 
         if frozen:
             for param in self.conv_2d.parameters():
                 param.requires_grad = False
 
+    def _should_log(self):
+        return self.log_shapes and self.forward_step % self.log_every == 0
+
     def forward(self,
                 src: Tensor,
                 src_length_batch
                 ):
+        self.forward_step += 1
+        if self._should_log():
+            log_event(
+                "feature_extractor.input",
+                step=self.forward_step,
+                src=tensor_summary(src, "src_input_ids"),
+                src_length_batch=summarize_obj(src_length_batch, "src_length_batch"),
+            )
         src = self.conv_2d(src,src_length_batch)
+        if self._should_log():
+            log_event("feature_extractor.after_conv2d", step=self.forward_step, src=tensor_summary(src, "after_signgraph_resnet_[B,T,512]"))
         src = self.conv_1d(src)
+        if self._should_log():
+            log_event("feature_extractor.after_conv1d", step=self.forward_step, src=tensor_summary(src, "after_temporal_conv_[B,Tp,1024]"))
 
         return src
 
