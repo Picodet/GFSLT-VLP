@@ -6,7 +6,7 @@ data:
   img_path: /mnt/Data/datasets/SLT/PHOENIX-2014-T/fullFrame-210x260px/
   max_length: 300
   target_field: gloss
-  target_lowercase: True
+
 training:
   wandb: disabled # online or disabled
   scale_embedding: False
