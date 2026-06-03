@@ -71,6 +71,9 @@ class S2T_Dataset(Dataset.Dataset):
         self.img_path = config['data']['img_path']
         self.phase = phase
         self.max_length = config['data']['max_length']
+        self.target_field = config.get('data', {}).get('target_field', 'gloss')
+        if self.target_field not in {'gloss', 'text'}:
+            raise ValueError(f"Unsupported target_field={self.target_field!r}; expected 'gloss' or 'text'.")
         
         self.list = [key for key,value in self.raw_data.items()]   
 
@@ -101,7 +104,7 @@ class S2T_Dataset(Dataset.Dataset):
     def __getitem__(self, index):
         key = self.list[index]
         sample = self.raw_data[key]
-        tgt_sample = sample['text']
+        tgt_sample = sample[self.target_field]
         length = sample['length']
         
         name_sample = sample['name']
@@ -204,7 +207,7 @@ class S2T_Dataset(Dataset.Dataset):
         return src_input, tgt_input
 
     def __str__(self):
-        return f'#total {self.phase} set: {len(self.list)}.'
+        return f'#total {self.phase} set: {len(self.list)}, target_field: {self.target_field}.'
 
 
 
