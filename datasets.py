@@ -113,6 +113,12 @@ class S2T_Dataset(Dataset.Dataset):
         
         return name_sample,img_sample,tgt_sample
     
+    def format_target(self, target):
+        target = ' '.join(str(target).strip().split())
+        if self.target_lowercase:
+            target = target.lower()
+        return target
+
     def load_imgs(self, paths):
 
         data_transform = transforms.Compose([
