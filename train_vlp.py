@@ -35,6 +35,7 @@ import math
 import sys
 from typing import Iterable, Optional
 from loguru import logger
+from fusion_logger import setup_fusion_logger
 
 
 # *metric
@@ -153,6 +154,7 @@ def get_args_parser():
     return parser
 
 def main(args, config):
+    setup_fusion_logger(log_dir="logs/fusion", filename="signgraph_fusion.jsonl", level="INFO")
     utils.init_distributed_mode(args)
     print(args)
 
