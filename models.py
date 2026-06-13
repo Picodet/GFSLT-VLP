@@ -88,48 +88,21 @@ def make_resnet(name='resnet18'):
 class resnet(nn.Module):
     def __init__(self):
         super(resnet, self).__init__()
-        self.resnet = make_resnet(name='resnet18')
+        # SignGraph graph-enhanced ResNet (LocalGraph + TemporalGraph).
+        # num_classes=512 only sizes the final fc, which we drop (Identity) so
+        # the module emits the 512-d backbone feature (avgpool output).
+        self.resnet = signgraph_resnet18(num_classes=512)
+        self.resnet.fc = nn.Identity()
 
     def forward(self, x, lengths):
-        x = self.resnet(x)
-        x_batch = []
-        start = 0
-        for length in lengths:
-            end = start + length
-            x_batch.append(x[start:end])
-            start = end
-        x = pad_sequence(x_batch,padding_value=PAD_IDX,batch_first=True)
-        return x
-
-
-class SignGraphResNetForGFSLT(nn.Module):
-    """Adapter that exposes SignGraph's graph-enhanced ResNet (LocalGraph +
-    TemporalGraph) behind the same interface as the original GFSLT ``resnet``.
-
-    Input/output contract is identical to ``resnet`` so it can be dropped into
-    ``FeatureExtracter.conv_2d`` without touching downstream code:
-        forward(src=[sumT, 3, H, W], lengths=[B]) -> [B, maxT, 512]
-
-    Internally it regroups the flattened frames into the [B, C, T, H, W] layout
-    that SignGraph expects, runs the graph-ResNet, then scatters the per-clip
-    features back into a padded [B, maxT, 512] batch.
-    """
-
-    def __init__(self):
-        super(SignGraphResNetForGFSLT, self).__init__()
-        # num_classes=512 only sizes the final fc; we replace it with Identity
-        # so the module emits the 512-d backbone feature (avgpool output).
-        self.signgraph = signgraph_resnet18(num_classes=512)
-        self.signgraph.fc = nn.Identity()
-
-    def forward(self, x, lengths):
-        # x: [sumT, 3, H, W], lengths: iterable of per-clip frame counts (sum == sumT)
+        # x: [sumT, 3, H, W]; lengths: per-clip frame counts (sum == sumT).
+        # Regroup flattened frames into SignGraph's [B, 3, T, H, W] layout, run
+        # the graph-ResNet, then scatter back to a padded [B, maxT, 512] batch
+        # so the output contract matches the original torchvision resnet path.
         lengths = [int(l) for l in lengths]
-        _, C, H, W = x.shape
         max_t = max(lengths)
         B = len(lengths)
 
-        # split the concatenated frames per clip and pad to a dense [B, maxT, 3, H, W]
         clips = []
         start = 0
         for length in lengths:
@@ -141,11 +114,10 @@ class SignGraphResNetForGFSLT(nn.Module):
             start += length
         x = torch.stack(clips, dim=0)                      # [B, maxT, 3, H, W]
 
-        # SignGraph expects [N, C, T, H, W]
         x = x.permute(0, 2, 1, 3, 4).contiguous()          # [B, 3, maxT, H, W]
-        feat = self.signgraph(x)                           # [B * maxT, 512]
-        feat = feat.view(B, max_t, -1)                     # [B, maxT, 512]
-        return feat
+        x = self.resnet(x)                                 # [B * maxT, 512]
+        x = x.view(B, max_t, -1)                           # [B, maxT, 512]
+        return x
 
   
 class TemporalConv(nn.Module):
@@ -284,13 +256,7 @@ class SLRCLIP(nn.Module):
 class FeatureExtracter(nn.Module):
     def __init__(self, frozen=False):
         super(FeatureExtracter, self).__init__()
-        # backbone selection: 'signgraph' uses SignGraph graph-ResNet (LocalGraph +
-        # TemporalGraph); 'resnet' falls back to the original torchvision ResNet18.
-        backbone = _('visual_backbone', 'signgraph', choices=['signgraph', 'resnet'])
-        if backbone == 'signgraph':
-            self.conv_2d = SignGraphResNetForGFSLT()
-        else:
-            self.conv_2d = resnet()
+        self.conv_2d = resnet() # InceptionI3d()
         self.conv_1d = TemporalConv(input_size=512, hidden_size=1024, conv_type=2)
 
         if frozen:
