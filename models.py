@@ -96,27 +96,20 @@ class resnet(nn.Module):
 
     def forward(self, x, lengths):
         # x: [sumT, 3, H, W]; lengths: per-clip frame counts (sum == sumT).
-        # Regroup flattened frames into SignGraph's [B, 3, T, H, W] layout, run
-        # the graph-ResNet, then scatter back to a padded [B, maxT, 512] batch
-        # so the output contract matches the original torchvision resnet path.
+        # Run each clip through the graph-ResNet at its TRUE length (N=1), so
+        # BatchNorm3d running stats and the temporal graph only ever see real
+        # frames -- no batch-alignment padding is fed into the backbone. Pad in
+        # feature space afterwards, matching the original torchvision resnet
+        # path's [B, maxT, 512] output contract.
         lengths = [int(l) for l in lengths]
-        max_t = max(lengths)
-        B = len(lengths)
-
-        clips = []
+        feats = []
         start = 0
         for length in lengths:
-            clip = x[start:start + length]                 # [t, 3, H, W]
-            if length < max_t:
-                pad = clip[-1:].expand(max_t - length, -1, -1, -1)
-                clip = torch.cat((clip, pad), dim=0)       # repeat last frame as padding
-            clips.append(clip)
+            clip = x[start:start + length]                 # [T_i, 3, H, W]
+            clip = clip.permute(1, 0, 2, 3).unsqueeze(0)   # [1, 3, T_i, H, W]
+            feats.append(self.resnet(clip))                # [T_i, 512]
             start += length
-        x = torch.stack(clips, dim=0)                      # [B, maxT, 3, H, W]
-
-        x = x.permute(0, 2, 1, 3, 4).contiguous()          # [B, 3, maxT, H, W]
-        x = self.resnet(x)                                 # [B * maxT, 512]
-        x = x.view(B, max_t, -1)                           # [B, maxT, 512]
+        x = pad_sequence(feats, padding_value=PAD_IDX, batch_first=True)  # [B, maxT, 512]
         return x
 
   
