@@ -13,6 +13,9 @@ from torch.nn.utils.rnn import pad_sequence
 #import pytorchvideo.models.x3d as x3d
 import utils as utils
 
+# SignGraph graph-enhanced ResNet (LocalGraph + TemporalGraph)
+from modules.resnet import resnet18 as signgraph_resnet18
+
 """ PyTorch MBART model."""
 from transformers import MBartForConditionalGeneration, MBartPreTrainedModel, MBartModel, MBartConfig
 from transformers.modeling_outputs import (
@@ -85,18 +88,30 @@ def make_resnet(name='resnet18'):
 class resnet(nn.Module):
     def __init__(self):
         super(resnet, self).__init__()
-        self.resnet = make_resnet(name='resnet18')
+        # SignGraph graph-enhanced ResNet (LocalGraph + TemporalGraph).
+        # num_classes=512 only sizes the final fc, which we drop (Identity) so
+        # the module emits the 512-d backbone feature (avgpool output).
+        self.resnet = signgraph_resnet18(num_classes=512)
+        self.resnet.fc = nn.Identity()
 
     def forward(self, x, lengths):
-        x = self.resnet(x)
-        x_batch = []
+        # x: [sumT, 3, H, W]; lengths: per-clip frame counts (sum == sumT).
+        # Run each clip through the graph-ResNet at its TRUE length (N=1), so
+        # BatchNorm3d running stats and the temporal graph only ever see real
+        # frames -- no batch-alignment padding is fed into the backbone. Pad in
+        # feature space afterwards, matching the original torchvision resnet
+        # path's [B, maxT, 512] output contract.
+        lengths = [int(l) for l in lengths]
+        feats = []
         start = 0
         for length in lengths:
-            end = start + length
-            x_batch.append(x[start:end])
-            start = end
-        x = pad_sequence(x_batch,padding_value=PAD_IDX,batch_first=True)
+            clip = x[start:start + length]                 # [T_i, 3, H, W]
+            clip = clip.permute(1, 0, 2, 3).unsqueeze(0)   # [1, 3, T_i, H, W]
+            feats.append(self.resnet(clip))                # [T_i, 512]
+            start += length
+        x = pad_sequence(feats, padding_value=PAD_IDX, batch_first=True)  # [B, maxT, 512]
         return x
+
   
 class TemporalConv(nn.Module):
     def __init__(self, input_size, hidden_size, conv_type=2):
