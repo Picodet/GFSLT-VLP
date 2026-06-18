@@ -10,3 +10,5 @@ wandb
 demo/
 backup
 .spec-workflow/
+.idea/
+logs/
